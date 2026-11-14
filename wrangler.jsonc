@@ -1,0 +1,9 @@
+{
+  "name": "cold-chain-digital-twin",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-06-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "durable_objects": { "bindings": [{ "name": "STORE", "class_name": "StoreTwin" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StoreTwin"] }],
+  "build": { "command": "node scripts/vendor.mjs" }
+}

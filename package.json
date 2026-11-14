@@ -1,0 +1,20 @@
+{
+  "name": "cold-chain-digital-twin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "3D digital twin dashboard for the cold-chain edge AI device",
+  "scripts": {
+    "postinstall": "node scripts/vendor.mjs",
+    "start": "node server.js",
+    "start:live": "SIM=0 node server.js",
+    "dev:cf": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.162.0"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "store": { "name": "Demo Store 01", "floor": [26, 18] },
+  "kinds": {
+    "freezer": { "label": "Freezer", "setpoint": -18, "warn": -15, "crit": -12, "heat_range": 40 },
+    "chiller": { "label": "Chiller", "setpoint": 4, "warn": 7, "crit": 9, "heat_range": 12 },
+    "pharma": { "label": "Pharmacy fridge", "setpoint": 5, "warn": 7.5, "crit": 8, "heat_range": 8 }
+  },
+  "nodes": {
+    "edge": [4.2, 2.9, -8.85],
+    "vendor": [12.85, 2.4, -3],
+    "internet": [15.5, 6.8, -3],
+    "dashboard": [4.2, 7.4, -11]
+  },
+  "units": [
+    { "id": "FZ-01", "kind": "freezer", "model": "upright", "contents": "Frozen vegetables", "stock_eur": 4200, "x": -9.5, "z": -8.4, "rot": 0 },
+    { "id": "FZ-02", "kind": "freezer", "model": "upright", "contents": "Ice cream", "stock_eur": 6100, "x": -7.4, "z": -8.4, "rot": 0 },
+    { "id": "FZ-03", "kind": "freezer", "model": "upright", "contents": "Frozen fish", "stock_eur": 7800, "x": -5.3, "z": -8.4, "rot": 0 },
+    { "id": "FZ-04", "kind": "freezer", "model": "upright", "contents": "Frozen meat", "stock_eur": 7400, "x": -3.2, "z": -8.4, "rot": 0 },
+    { "id": "FZ-05", "kind": "freezer", "model": "upright", "contents": "Ready meals", "stock_eur": 5300, "x": -1.1, "z": -8.4, "rot": 0 },
+    { "id": "FZ-06", "kind": "freezer", "model": "upright", "contents": "Frozen bakery", "stock_eur": 3900, "x": 1.0, "z": -8.4, "rot": 0 },
+    { "id": "FZ-07", "kind": "freezer", "model": "chest", "contents": "Seafood", "stock_eur": 5600, "x": -5.2, "z": 0.6, "rot": 180 },
+    { "id": "FZ-08", "kind": "freezer", "model": "chest", "contents": "Poultry", "stock_eur": 4800, "x": -2.7, "z": 0.6, "rot": 180 },
+    { "id": "FZ-09", "kind": "freezer", "model": "chest", "contents": "Ice cream tubs", "stock_eur": 3600, "x": -5.2, "z": 1.8, "rot": 0 },
+    { "id": "FZ-10", "kind": "freezer", "model": "chest", "contents": "Frozen berries", "stock_eur": 2900, "x": -2.7, "z": 1.8, "rot": 0 },
+    { "id": "CH-01", "kind": "chiller", "model": "multideck", "contents": "Dairy", "stock_eur": 3100, "x": -12.4, "z": -4.5, "rot": 90 },
+    { "id": "CH-02", "kind": "chiller", "model": "multideck", "contents": "Fresh meat", "stock_eur": 6900, "x": -12.4, "z": -1.9, "rot": 90 },
+    { "id": "CH-03", "kind": "chiller", "model": "multideck", "contents": "Cheese & deli", "stock_eur": 5200, "x": -12.4, "z": 0.7, "rot": 90 },
+    { "id": "CH-04", "kind": "chiller", "model": "multideck", "contents": "Juice & yoghurt", "stock_eur": 2400, "x": -12.4, "z": 3.3, "rot": 90 },
+    { "id": "PH-01", "kind": "pharma", "model": "pharma", "contents": "Insulin", "stock_eur": 38000, "x": 8.2, "z": -8.45, "rot": 0 },
+    { "id": "PH-02", "kind": "pharma", "model": "pharma", "contents": "Vaccines", "stock_eur": 52000, "x": 10.0, "z": -8.45, "rot": 0 }
+  ]
+}

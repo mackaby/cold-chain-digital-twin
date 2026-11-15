@@ -17,7 +17,7 @@
       <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.600 8-6 8-11V5l-8-3Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7v10M7.700 9.500l8.600 5M16.300 9.500l-8.600 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
       <div>
         <div class="brand-title">Last Line of Defence</div>
-        <div class="brand-sub"><span id="store-name"></span> · digital twin</div>
+        <div class="brand-sub"><span id="store-name"></span> · read-only view of the edge device</div>
       </div>
     </div>
     <div id="banner" class="banner ok">ALL UNITS SECURE</div>
@@ -25,26 +25,9 @@
       <div class="kpi"><div class="kpi-v" id="kpi-units">–</div><div class="kpi-l">units watched</div></div>
       <div class="kpi"><div class="kpi-v" id="kpi-faults">0</div><div class="kpi-l">active faults</div></div>
       <div class="kpi"><div class="kpi-v" id="kpi-risk">€0</div><div class="kpi-l">stock at risk</div></div>
-      <div class="kpi"><div class="kpi-v" id="kpi-link"><span class="dot"></span><span id="kpi-link-t">waiting</span></div><div class="kpi-l">edge device · outbound only</div></div>
+      <div class="kpi"><div class="kpi-v" id="kpi-link"><span class="dot"></span><span id="kpi-link-t">waiting</span></div><div class="kpi-l">edge device → this screen</div></div>
     </div>
   </header>
-
-  <aside class="left">
-    <section class="panel" id="sim-panel" hidden>
-      <h2>Attack simulator <span class="tag">red team</span></h2>
-      <p class="hint">Attacks hit the vendor's refrigeration control system. The edge device is never the target that works.</p>
-      <div id="attacks"></div>
-      <div class="row">
-        <button id="btn-restore" class="ghost">Stop attacks</button>
-        <button id="btn-reset" class="ghost">Reset demo</button>
-      </div>
-    </section>
-
-    <section class="panel sms">
-      <h2>SMS sent by the device <span class="tag ok" id="sms-count">0</span></h2>
-      <div id="sms-list" class="sms-list"><div class="empty">No messages yet.</div></div>
-    </section>
-  </aside>
 
   <aside class="right">
     <section class="panel" id="detail" hidden>
@@ -66,24 +49,44 @@
         <div><span>Compressor</span><b id="d-comp">–</b></div>
         <div><span>Stock</span><b id="d-stock">–</b></div>
       </div>
-      <div class="chart-title">Temperature, last 2 min <span class="lg"><i class="l1"></i>probe <i class="l2"></i>controller <i class="l3"></i>limit</span></div>
+      <div class="facts ml" id="d-ml" hidden>
+        <div class="wide"><span>Edge ML model</span><b>LightGBM, 1-minute windows</b></div>
+        <div class="wide"><span>Anomaly score / threshold</span><b id="m-score">–</b></div>
+        <div class="wide"><span>Fault model</span><b id="m-fault">–</b></div>
+        <div class="wide"><span>Supply / return air</span><b id="m-air">–</b></div>
+        <div class="wide"><span>Gas cooler air in / out</span><b id="m-gc">–</b></div>
+        <div class="wide"><span>Replaying</span><b id="m-rec">–</b></div>
+      </div>
+      <button id="btn-circuit" class="ghost circuit-btn">Show circuit diagram</button>
+      <div class="chart-title"><span id="t-temp">Temperature, last 2 min</span> <span class="lg"><i class="l1"></i>probe <i class="l2"></i>controller <i class="l3"></i>limit</span></div>
       <canvas id="chart-temp" class="chart"></canvas>
-      <div class="chart-title">Power draw (W)</div>
+      <div class="chart-title" id="t-power">Power draw (W)</div>
       <canvas id="chart-power" class="chart small"></canvas>
       <div id="d-faults"></div>
     </section>
 
     <section class="panel grow">
-      <h2>Detections <span class="tag" id="alert-count">0</span></h2>
+      <h2>Incidents <span class="tag" id="alert-count">0</span><span class="hint">reported by the edge device</span></h2>
       <div id="alerts" class="alerts"><div class="empty">No anomalies detected. Click a unit in the store to inspect it.</div></div>
     </section>
   </aside>
 
+  <section class="panel" id="circuit" hidden aria-label="Refrigeration circuit"></section>
+
+  <!-- Who does what. This screen is the fourth box: it only shows what the device sent. -->
+  <section class="panel" id="chain" aria-label="Who does what">
+    <div class="st" id="st-att"><div class="st-k">Outside the store</div><div class="st-n">Attacker</div><div class="st-d"></div><div class="st-s"></div></div>
+    <div class="arrow">commands</div>
+    <div class="st" id="st-ven"><div class="st-k">In the store</div><div class="st-n">Vendor control system</div><div class="st-d"></div><div class="st-s"></div></div>
+    <div class="arrow">own probes</div>
+    <div class="st" id="st-edge"><div class="st-k">In the store · independent</div><div class="st-n" id="st-edge-n">Edge AI device</div><div class="st-d"></div><div class="st-s"></div></div>
+    <div class="arrow">one-way data</div>
+    <div class="st" id="st-view"><div class="st-k">Anywhere</div><div class="st-n">This screen</div><div class="st-d"></div><div class="st-s"></div></div>
+  </section>
+
   <div id="toast" class="toast" hidden></div>
   <div class="legend">
-    <span><i style="background:#34d399"></i>edge sensing + one-way uplink</span>
-    <span><i style="background:#7f8fb0"></i>vendor control network</span>
-    <span><i style="background:#ff4d5e"></i>attack traffic</span>
+    <span><i style="background:#ff4d5e"></i>attack traffic, shown only during an attack</span>
     <span class="muted">drag to orbit · scroll to zoom · click a unit</span>
   </div>
 

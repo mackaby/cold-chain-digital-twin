@@ -3,3 +3,6 @@ public/vendor
 .wrangler
 .dev.vars
 .claude
+edge/.venv
+edge/.cache
+__pycache__

@@ -1,4 +1,9 @@
 import { createScene } from '/scene.js';
+import { createCircuit } from '/circuit.js';
+import { ATTACK_TITLE } from '/attacks.js';
+
+// Read-only view: this page only listens on /events. It has no controls and sends
+// nothing; attacks are started from the attacker console (/attacker) on another device.
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -8,14 +13,6 @@ const el = (tag, cls, text) => {
   return n;
 };
 
-const ATTACKS = [
-  { id: 'setpoint_hijack', title: 'Setpoint hijack to +50 °C', desc: 'Wall freezers: setpoint rewritten, defrost heaters forced on.', where: 'FZ-01…06' },
-  { id: 'sensor_spoof', title: 'Blind the controller', desc: 'Island freezers: compressors killed while the controller replays healthy readings.', where: 'FZ-07…10' },
-  { id: 'short_cycle', title: 'Compressor burn-out', desc: 'Dairy chillers: compressors forced on/off every second to destroy them.', where: 'CH-01…04' },
-  { id: 'slow_drift', title: 'Stealth spoilage', desc: 'Pharmacy: insulin and vaccines warmed slowly, under every classic alarm limit.', where: 'PH-01…02' },
-  { id: 'coordinated', title: 'Coordinated strike', desc: 'All of the above at once.', where: 'ALL' },
-  { id: 'edge_probe', title: 'Attack the edge device', desc: 'Try to reach the last line of defence from the internet.', where: 'EDGE', safe: true },
-];
 const TYPE = {
   rapid_temp_rise: 'Rapid temperature rise',
   temp_excursion: 'Temperature excursion',
@@ -23,6 +20,14 @@ const TYPE = {
   setpoint_tamper: 'Setpoint tampering',
   compressor_short_cycle: 'Compressor short-cycling',
   slow_drift: 'Slow drift',
+  // Fault classes of the edge ML model (edge/ml_bridge.py)
+  freezer_door_open: 'Freezer door open',
+  evaporator_ice_accumulation: 'Evaporator ice accumulation',
+  expansion_valve_failure: 'Expansion valve failure',
+  chilled_case_evaporator_fan_failure: 'Evaporator fan failure',
+  gas_cooler_airflow_blockage: 'Gas cooler airflow blockage',
+  chilled_case_evaporator_airflow_blockage: 'Evaporator airflow blockage',
+  unclassified_anomaly: 'Unclassified anomaly',
 };
 const typeName = (t) => TYPE[t] || t.replace(/_/g, ' ');
 const RANK = { ok: 0, info: 0, warning: 1, critical: 2 };
@@ -35,7 +40,9 @@ const layout = await (await fetch('/api/layout')).json();
 const units = new Map(layout.units.map((cfg) => [cfg.id, { cfg, kind: layout.kinds[cfg.kind], hist: [], state: 'ok' }]));
 let faults = [];
 let alerts = [];
+let incidents = [];
 let sim = { enabled: false, attacks: [], edge_probe_until: 0 };
+let deviceId = null;
 let selected = null;
 let lastIngest = 0;
 
@@ -44,25 +51,20 @@ $('kpi-units').textContent = units.size;
 
 const scene = createScene($('stage'), layout, { onSelect: select });
 
-// ---------- attack simulator ----------
-const post = (path, body = {}) => fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-for (const a of ATTACKS) {
-  const b = el('button', 'attack' + (a.safe ? ' safe' : ''));
-  b.dataset.id = a.id;
-  const t = el('div', 'attack-t', a.title);
-  t.append(el('em', '', a.where));
-  b.append(t, el('div', 'attack-d', a.desc));
-  b.onclick = () => {
-    post('/api/sim/attack', { scenario: a.id });
-    if (a.id === 'edge_probe') showToast();
-  };
-  $('attacks').append(b);
-}
-$('btn-restore').onclick = () => post('/api/sim/restore');
-$('btn-reset').onclick = () => post('/api/sim/reset');
 $('detail-close').onclick = () => select(null);
 
-let toastTimer;
+// Circuit overlay: opens with a unit, can be closed and reopened from the unit panel.
+let circuitOpen = false;
+const circuit = createCircuit($('circuit'), { typeName, onClose: () => setCircuit(false) });
+$('btn-circuit').onclick = () => setCircuit(!circuitOpen);
+function setCircuit(open) {
+  circuitOpen = open && !!selected;
+  $('circuit').hidden = !circuitOpen;
+  $('btn-circuit').textContent = circuitOpen ? 'Hide circuit diagram' : 'Show circuit diagram';
+  renderDetail();
+}
+
+let toastTimer, toastFor = 0;
 function showToast() {
   const t = $('toast');
   t.replaceChildren();
@@ -78,10 +80,11 @@ es.onmessage = (e) => {
   const m = JSON.parse(e.data);
   if (m.type === 'snapshot') {
     for (const u of units.values()) u.hist = (m.history[u.cfg.id] || []).slice(-WINDOW);
-    faults = m.faults; alerts = m.alerts; sim = m.sim;
+    faults = m.faults; alerts = m.alerts; sim = m.sim; deviceId = m.device_id;
     renderAlerts(); renderSim(); refresh();
   } else if (m.type === 'ingest') {
     lastIngest = Date.now();
+    deviceId = m.device_id;
     for (const r of m.readings) {
       const u = units.get(r.unit_id);
       if (!u) continue;
@@ -89,7 +92,7 @@ es.onmessage = (e) => {
       if (u.hist.length > WINDOW) u.hist.shift();
     }
     faults = m.faults;
-    if (m.alerts.length) { alerts = [...m.alerts.slice().reverse(), ...alerts].slice(0, 150); renderAlerts(); }
+    if (m.alerts.length) { alerts = [...m.alerts.slice().reverse(), ...alerts].slice(0, 300); renderAlerts(); }
     refresh();
   } else if (m.type === 'sim') {
     sim = m.sim;
@@ -118,6 +121,7 @@ function refresh() {
   banner.className = 'banner ' + (crit ? 'critical' : warn ? 'warning' : 'ok');
   banner.textContent = crit ? `ANOMALY DETECTED · ${crit} UNIT${crit > 1 ? 'S' : ''} CRITICAL`
     : warn ? `EARLY WARNING · ${warn} UNIT${warn > 1 ? 'S' : ''}` : 'ALL UNITS SECURE';
+  renderChain();
   renderDetail();
 }
 
@@ -127,19 +131,130 @@ setInterval(() => {
   $('kpi-link').querySelector('.dot').className = 'dot ' + (alive ? 'live' : lastIngest ? 'dead' : '');
   $('kpi-link-t').textContent = alive ? 'live' : lastIngest ? `silent ${Math.round(age)} s` : 'waiting';
   scene.setEdgeAlive(alive);
+  renderChain();
 }, 1000);
 
 function renderSim() {
-  $('sim-panel').hidden = !sim.enabled;
-  const active = new Set(sim.attacks.map((a) => a.scenario));
-  for (const b of $('attacks').children) {
-    const id = b.dataset.id;
-    b.classList.toggle('active', active.has(id) || (id === 'coordinated' && active.size >= 4));
-  }
   scene.setSim(sim);
+  if (sim.edge_probe_until > Date.now() && sim.edge_probe_until !== toastFor) {
+    toastFor = sim.edge_probe_until;
+    showToast();
+  }
+  renderChain();
 }
 
-// ---------- alerts + sms ----------
+// ---------- who does what ----------
+function station(id, cls, d, s) {
+  const n = $(id);
+  n.className = 'st' + (cls ? ' ' + cls : '');
+  n.querySelector('.st-d').textContent = d;
+  n.querySelector('.st-s').textContent = s;
+}
+
+function renderChain() {
+  const now = Date.now();
+  const probing = (sim.edge_probe_until || 0) > now;
+  const from = (o) => (o ? `from ${o} · ` : '');
+  if (sim.attacks.length) {
+    const first = sim.attacks.reduce((a, b) => (a.started_at <= b.started_at ? a : b));
+    const targets = new Set(sim.attacks.flatMap((a) => a.targets));
+    station('st-att', 'bad', sim.attacks.length > 1 ? `${sim.attacks.length} attacks running` : ATTACK_TITLE[first.scenario] || first.scenario,
+      `${from(first.origin)}since ${fmtTime(first.started_at)}`);
+    station('st-ven', 'bad', `Compromised · ${targets.size} unit${targets.size > 1 ? 's' : ''}`, 'obeying the attacker');
+  } else {
+    if (probing) station('st-att', 'bad', 'Trying to reach the edge device', `${from(sim.edge_probe_origin)}now`);
+    else station('st-att', '', sim.enabled ? 'No hostile traffic' : 'Not visible from here', 'not controlled from this screen');
+    station('st-ven', '', 'Normal operation', 'runs the freezers');
+  }
+
+  $('st-edge-n').textContent = deviceId ? `Edge AI · ${deviceId}` : sim.enabled ? 'Edge AI device (simulated)' : 'Edge AI device';
+  if (faults.length) {
+    const open = incidents.filter((i) => i.end === null);
+    const lat = open.map((i) => i.latency).filter((v) => v !== null);
+    const sms = open.reduce((n, i) => n + i.sms, 0);
+    station('st-edge', 'good', `Caught on the device${lat.length ? ` in ${Math.min(...lat).toFixed(1)} s` : ''}`,
+      `${faults.length} active detection${faults.length > 1 ? 's' : ''}${sms ? ` · ${sms} SMS sent by the device` : ''}`);
+  } else if (probing) {
+    station('st-edge', 'good', 'Inbound connection refused', 'no open ports, nothing to break into');
+  } else {
+    station('st-edge', '', lastIngest ? `Watching ${units.size} units · no anomaly` : 'Waiting for the device', 'decides alone · accepts no connections');
+  }
+
+  const age = lastIngest ? (now - lastIngest) / 1000 : null;
+  station('st-view', '', 'Read-only view', age === null ? 'nothing received yet' : `last message ${age < 1 ? age.toFixed(1) : Math.round(age)} s ago · sends nothing`);
+}
+
+// ---------- incidents ----------
+// The device reports one detection per unit and fault type. For reading at a glance they
+// are grouped: an episode is one unit from its first detection until all its faults clear,
+// and an incident is the episodes that share a cause and started together.
+const CAUSE = ['setpoint_tamper', 'sensor_spoofing', 'compressor_short_cycle', 'slow_drift']; // most telling first
+const SYMPTOM = ['temp_excursion', 'rapid_temp_rise'];
+const weight = (t) => (CAUSE.includes(t) ? CAUSE.indexOf(t) : SYMPTOM.includes(t) ? 100 + SYMPTOM.indexOf(t) : 50);
+const JOIN_MS = 20_000;
+
+function buildIncidents() {
+  const open = new Map();
+  const episodes = [];
+  for (let i = alerts.length - 1; i >= 0; i--) { // oldest first
+    const a = alerts[i];
+    let ep = open.get(a.unit_id);
+    if (a.status === 'cleared') {
+      if (!ep) continue;
+      ep.active.delete(a.type);
+      if (!ep.active.size) ep.end = a.ts;
+      continue;
+    }
+    if (!ep || (ep.end !== null && a.ts - ep.end > JOIN_MS)) {
+      ep = { unit: a.unit_id, start: a.ts, end: null, active: new Set(), first: new Map(), sms: 0, latency: null, severity: 'warning', model: '' };
+      open.set(a.unit_id, ep);
+      episodes.push(ep);
+    }
+    ep.end = null;
+    ep.active.add(a.type);
+    if (!ep.first.has(a.type)) ep.first.set(a.type, a);
+    if (a.sms_sent) ep.sms++;
+    if (a.latency_s != null && (ep.latency === null || a.latency_s < ep.latency)) ep.latency = a.latency_s;
+    if (a.severity === 'critical') ep.severity = 'critical';
+    if (a.model) ep.model = a.model;
+  }
+  const out = [];
+  for (const ep of episodes) {
+    const type = [...ep.first.keys()].sort((x, y) => weight(x) - weight(y))[0];
+    let inc = out.find((x) => x.type === type && Math.abs(ep.start - x.start) <= JOIN_MS);
+    if (!inc) {
+      inc = { type, start: ep.start, end: 0, units: [], also: new Set(), sms: 0, latency: null, severity: 'warning', message: ep.first.get(type).message, model: ep.model };
+      out.push(inc);
+    }
+    inc.units.push(ep.unit);
+    inc.end = inc.end === null || ep.end === null ? null : Math.max(inc.end, ep.end);
+    for (const t of ep.first.keys()) if (t !== type) inc.also.add(t);
+    inc.sms += ep.sms;
+    if (ep.latency !== null && (inc.latency === null || ep.latency < inc.latency)) inc.latency = ep.latency;
+    if (ep.severity === 'critical') inc.severity = 'critical';
+  }
+  return out.sort((a, b) => b.start - a.start);
+}
+
+function incidentNode(inc) {
+  const ended = inc.end !== null;
+  const n = el('div', `alert ${ended ? 'cleared' : inc.severity}`);
+  const h = el('div', 'alert-h');
+  h.append(el('span', '', typeName(inc.type)), el('time', '', fmtTime(inc.start)));
+  const ids = [...inc.units].sort();
+  n.append(h, el('div', 'alert-u', `${ids.length} unit${ids.length > 1 ? 's' : ''} · ${ids.slice(0, 3).join(', ')}${ids.length > 3 ? ` +${ids.length - 3}` : ''}`));
+  if (inc.message) n.append(el('div', 'alert-m', inc.message));
+  if (inc.also.size) n.append(el('div', 'alert-u', `also: ${[...inc.also].map((t) => typeName(t).toLowerCase()).join(', ')}`));
+  const chips = el('div', 'chips');
+  if (inc.latency !== null) chips.append(el('span', 'chip fast', `caught on the device in ${inc.latency.toFixed(1)} s`));
+  if (inc.sms) chips.append(el('span', 'chip', `${inc.sms} SMS sent by the device`));
+  if (inc.model) chips.append(el('span', 'chip', inc.model));
+  chips.append(ended ? el('span', 'chip fast', `over after ${Math.max(1, Math.round((inc.end - inc.start) / 1000))} s`) : el('span', 'chip live', 'ongoing'));
+  n.append(chips);
+  n.onclick = () => select(ids[0]);
+  return n;
+}
+
 function alertNode(a) {
   const n = el('div', `alert ${a.status === 'cleared' ? 'cleared' : a.severity}`);
   const h = el('div', 'alert-h');
@@ -149,36 +264,18 @@ function alertNode(a) {
   const chips = el('div', 'chips');
   if (a.latency_s != null) chips.append(el('span', 'chip fast', `detected in ${a.latency_s.toFixed(1)} s`));
   if (a.confidence != null && a.status !== 'cleared') chips.append(el('span', 'chip', `confidence ${Math.round(a.confidence * 100)}%`));
+  if (a.model && a.status !== 'cleared') chips.append(el('span', 'chip', a.model));
   if (a.sms_sent) chips.append(el('span', 'chip', 'SMS sent'));
   if (chips.children.length) n.append(chips);
   return n;
 }
 
 function renderAlerts() {
-  const box = $('alerts');
-  $('alert-count').textContent = alerts.length;
-  if (!alerts.length) {
-    box.replaceChildren(el('div', 'empty', 'No anomalies detected. Click a unit in the store to inspect it.'));
-  } else {
-    box.replaceChildren(...alerts.slice(0, 60).map((a) => {
-      const n = alertNode(a);
-      n.onclick = () => select(a.unit_id);
-      return n;
-    }));
-  }
-  const sms = alerts.filter((a) => a.sms_sent && a.status === 'active');
-  $('sms-count').textContent = sms.length;
-  if (!sms.length) {
-    $('sms-list').replaceChildren(el('div', 'empty', 'No messages yet. The device texts the on-call staff on every critical detection.'));
-  } else {
-    $('sms-list').replaceChildren(...sms.slice(0, 30).map((a) => {
-      const u = units.get(a.unit_id);
-      const b = el('div', 'bubble');
-      b.append(el('b', '', 'COLD CHAIN ALERT '), `${layout.store.name}: ${a.unit_id} (${u ? u.cfg.contents : ''}). ${typeName(a.type)}. ${a.message}`);
-      b.append(el('time', '', `${fmtTime(a.ts)} · to on-call store manager`));
-      return b;
-    }));
-  }
+  incidents = buildIncidents();
+  $('alert-count').textContent = incidents.length;
+  $('alerts').replaceChildren(...(incidents.length
+    ? incidents.slice(0, 30).map(incidentNode)
+    : [el('div', 'empty', 'Nothing reported by the edge device. Click a unit in the store to inspect it.')]));
 }
 
 // ---------- detail ----------
@@ -186,7 +283,7 @@ function select(id) {
   selected = id && units.has(id) ? id : null;
   scene.setSelected(selected);
   $('detail').hidden = !selected;
-  renderDetail();
+  setCircuit(!!selected);
 }
 
 function renderDetail() {
@@ -210,9 +307,26 @@ function renderDetail() {
     { data: u.hist.map((r) => r.rep), color: '#9aa7c0', dash: [4, 4] },
     { data: u.hist.map((r) => r.temp), color: '#4fc3ff', width: 2 },
   ], { limits: [{ v: u.kind.crit, color: '#ff4d5e' }], include: [u.kind.setpoint - 1, u.kind.crit + 1], suffix: '°' });
-  drawChart($('chart-power'), [{ data: u.hist.map((r) => r.pw), color: '#fbbf24', width: 1.5 }], { include: [0, 500], suffix: '' });
+  // Units fed by the edge ML model show its live output instead of the power draw.
+  const ml = last?.ml;
+  $('d-ml').hidden = !ml;
+  $('t-temp').textContent = ml ? 'Case air temperature, replayed recording' : 'Temperature, last 2 min';
+  $('t-power').textContent = ml ? 'Anomaly score (%) with alert threshold' : 'Power draw (W)';
+  if (ml) {
+    const pct = (v) => (v === null ? '–' : `${(v * 100).toFixed(1)}%`);
+    $('m-score').textContent = `${pct(ml.score)} / ${pct(ml.thr)}`;
+    $('m-fault').textContent = ml.fault ? `${ml.fault}${ml.p === null ? '' : ` ${Math.round(ml.p * 100)}%`}` : '–';
+    $('m-air').textContent = `${fmtT(ml.sup)} / ${fmtT(ml.ret)}`;
+    $('m-gc').textContent = `${fmtT(ml.gin)} / ${fmtT(ml.gout)}`;
+    $('m-rec').textContent = ml.rec ? `${ml.rec} · ${ml.at.replace('T', ' ')}` : '–';
+    drawChart($('chart-power'), [{ data: u.hist.map((r) => (r.ml?.score == null ? null : r.ml.score * 100)), color: '#fbbf24', width: 1.5 }],
+      { limits: ml.thr === null ? [] : [{ v: ml.thr * 100, color: '#ff4d5e' }], include: [0, 100], suffix: '' });
+  } else {
+    drawChart($('chart-power'), [{ data: u.hist.map((r) => r.pw), color: '#fbbf24', width: 1.5 }], { include: [0, 500], suffix: '' });
+  }
 
   const mine = faults.filter((f) => f.unit_id === selected);
+  if (circuitOpen) circuit.update({ unit: u.cfg, kind: u.kind, faults: mine, last });
   $('d-faults').replaceChildren(...mine.map((f) => alertNode({ ...f, ts: f.detected_at, status: 'active' })));
 }
 

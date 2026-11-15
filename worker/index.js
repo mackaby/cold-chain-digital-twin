@@ -59,7 +59,7 @@ export class StoreTwin extends DurableObject {
       if (text.length > 1_000_000) return json(413, { error: 'payload too large' });
       try { body = text ? JSON.parse(text) : {}; } catch { return json(400, { error: 'invalid JSON' }); }
     }
-    const out = this.twin.api(req.method, path, body, req.headers.get('authorization'));
+    const out = this.twin.api(req.method, path, body, req.headers.get('authorization'), req.headers.get('cf-connecting-ip') || '');
     return out ? json(out[0], out[1]) : json(404, { error: 'not found' });
   }
 }

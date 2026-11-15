@@ -151,7 +151,7 @@ function buildUnit(u) {
   label.renderOrder = 10;
   g.add(label);
 
-  return { cfg: u, group: g, hit, glow, status, label, cv, tex, critRing: mkRing(COL.critical), selRing: mkRing(0xffffff), h, state: 'ok', key: '' };
+  return { cfg: u, group: g, hit, glow, status, label, cv, tex, selRing: mkRing(0xffffff), h, state: 'ok', key: '' };
 }
 
 function drawLabel(unit, temp, state) {
@@ -298,24 +298,21 @@ export function createScene(container, layout, { onSelect }) {
   const attackerLabel = textSprite(['ATTACKER'], { color: '#ff4d5e', w: 240, h: 70, scale: 1.9 });
   attackerLabel.position.copy(netLabel.position); attackerLabel.visible = false; scene.add(attackerLabel);
 
-  const dashLabel = textSprite(['DASHBOARD + SMS', 'one-way data out'], { color: '#34d399', w: 360, scale: 2.7 });
-  dashLabel.position.copy(N.dashboard); scene.add(dashLabel);
-
   const line = (pts, color, opacity) => {
     const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
     scene.add(l);
     return l;
   };
-  line([N.internet, N.vendor], 0x6b7c9c, 0.35);
-  const uplink = [N.edge, N.edge.clone().setY(CEIL + 0.6), N.dashboard.clone().add(new THREE.Vector3(0, -0.6, 0))];
-  line(uplink, COL.edge, 0.5);
-  const flows = [new Flow(scene, uplink, COL.edge, 4, 2.2)];
+  // Kept calm on purpose: no lines at rest. The only wiring drawn is the attack
+  // path (internet -> vendor controller -> unit), and only while an attack runs.
+  const netLine = line([N.internet, N.vendor], COL.attack, 0.75);
+  netLine.visible = false;
 
   for (const u of units.values()) {
     const top = new THREE.Vector3(u.cfg.x, u.h, u.cfg.z);
     u.ctrlPath = [N.internet, N.vendor, new THREE.Vector3(N.vendor.x - 0.4, CEIL, N.vendor.z), new THREE.Vector3(u.cfg.x, CEIL, u.cfg.z), top];
-    u.ctrlLine = line(u.ctrlPath.slice(1), 0x7f8fb0, 0.13);
-    line([N.edge, new THREE.Vector3(N.edge.x, CEIL - 0.35, N.edge.z + 0.4), new THREE.Vector3(u.cfg.x, CEIL - 0.35, u.cfg.z), top], COL.edge, 0.2);
+    u.ctrlLine = line(u.ctrlPath.slice(1), COL.attack, 0.75);
+    u.ctrlLine.visible = false;
   }
 
   // post
@@ -369,7 +366,6 @@ export function createScene(container, layout, { onSelect }) {
       if (controls.target.distanceTo(focus) < 0.02) focus = null;
     }
     controls.update();
-    for (const f of flows) f.update(dt);
     for (const f of attackFlows) f.update(dt);
 
     const probing = Date.now() < probeUntil;
@@ -384,16 +380,9 @@ export function createScene(container, layout, { onSelect }) {
     netMat.color.setHex(hostile ? COL.attack : 0x6b7c9c);
     attackerLabel.visible = hostile; netLabel.visible = !hostile;
 
-    const pulse = (t * 1.1) % 1;
+    const lit = Math.sin(t * 5) > 0; // slow blink on the unit's status light
     for (const u of units.values()) {
-      if (u.state === 'critical') {
-        u.critRing.visible = true;
-        u.critRing.scale.setScalar(1 + pulse * 0.7);
-        u.critRing.material.opacity = 0.9 * (1 - pulse);
-        u.status.color.setHex(Math.sin(t * 10) > 0 ? COL.critical : 0x5a0f18);
-      } else {
-        u.critRing.visible = false;
-      }
+      if (u.state === 'critical') u.status.color.setHex(lit ? COL.critical : 0x5a0f18);
     }
     composer.render();
     requestAnimationFrame(frame);
@@ -424,10 +413,10 @@ export function createScene(container, layout, { onSelect }) {
       probeUntil = sim.edge_probe_until || 0;
       for (const u of units.values()) {
         const hit = targets.has(u.cfg.id);
-        u.ctrlLine.material.color.setHex(hit ? COL.attack : 0x7f8fb0);
-        u.ctrlLine.material.opacity = hit ? 0.75 : 0.13;
-        if (hit) attackFlows.push(new Flow(scene, u.ctrlPath, COL.attack, 3, 6));
+        u.ctrlLine.visible = hit;
+        if (hit) attackFlows.push(new Flow(scene, u.ctrlPath, COL.attack, 1, 4));
       }
+      netLine.visible = attackActive;
       vendorMat.emissive.setHex(attackActive ? COL.attack : 0x5b6b8a);
       vendorMat.emissiveIntensity = attackActive ? 1.4 : 0.5;
     },

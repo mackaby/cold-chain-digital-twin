@@ -23,6 +23,7 @@ export class Simulator {
     this.onState = onState;
     this.attacks = new Map(); // scenario -> { scenario, targets, started_at }
     this.edgeProbeUntil = 0;
+    this.edgeProbeOrigin = '';
     this.seq = 0;
     this.tickNo = 0;
     this.units = layout.units.map((cfg) => this.#fresh(cfg));
@@ -57,6 +58,7 @@ export class Simulator {
       enabled: true,
       attacks: [...this.attacks.values()],
       edge_probe_until: this.edgeProbeUntil,
+      edge_probe_origin: this.edgeProbeOrigin,
     };
   }
 
@@ -68,14 +70,16 @@ export class Simulator {
     return t;
   }
 
-  attack(scenario) {
+  // origin: where the request came from (the attacker console), shown on the dashboard.
+  attack(scenario, origin = '') {
     if (scenario === 'edge_probe') {
       this.edgeProbeUntil = Date.now() + 9000;
+      this.edgeProbeOrigin = origin;
       this.onState();
       return true;
     }
     if (scenario === 'coordinated') {
-      for (const s of Object.keys(SCENARIOS)) this.attack(s);
+      for (const s of Object.keys(SCENARIOS)) this.attack(s, origin);
       return true;
     }
     const sc = SCENARIOS[scenario];
@@ -88,7 +92,7 @@ export class Simulator {
         targets.push(u.cfg.id);
       }
     }
-    this.attacks.set(scenario, { scenario, targets, started_at: Date.now() });
+    this.attacks.set(scenario, { scenario, targets, origin, started_at: Date.now() });
     this.onState();
     return true;
   }

@@ -1,11 +1,14 @@
 // Local Node server. Zero runtime dependencies.
 //   POST /ingest   <- the edge device pushes readings + faults here (outbound-only from its side)
 //   GET  /events   -> browsers subscribe (Server-Sent Events)
+//   GET  /          -> read-only dashboard. GET /attacker -> attacker console (demo only),
+//                      meant for a different device; it is the only page that starts attacks.
 // The dashboard never talks back to the edge device; there is no route for it.
 // The hosted version (worker/index.js) exposes the same routes on Cloudflare.
 
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Twin } from './core.js';
@@ -74,9 +77,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const body = req.method === 'POST' ? await readJson(req) : null;
-    const out = twin.api(req.method, p, body, req.headers.authorization);
+    const out = twin.api(req.method, p, body, req.headers.authorization, req.socket.remoteAddress);
     if (out) return send(res, out[0], out[1]);
-    if (req.method === 'GET') return serveFile(res, p === '/' ? 'index.html' : p);
+    if (req.method === 'GET') return serveFile(res, p === '/' ? 'index.html' : p === '/attacker' ? 'attacker.html' : p);
     send(res, 404, { error: 'not found' });
   } catch (err) {
     send(res, 400, { error: err.message });
@@ -88,5 +91,10 @@ setInterval(() => { for (const res of clients) res.write(': ping\n\n'); }, 15000
 server.listen(PORT, () => {
   console.log(`Digital twin dashboard: http://localhost:${PORT}`);
   console.log(SIM_ENABLED ? 'Built-in edge simulator: ON (SIM=0 to disable)' : 'Waiting for edge device data on POST /ingest');
+  if (SIM_ENABLED) {
+    const lan = Object.values(os.networkInterfaces()).flat().filter((i) => i.family === 'IPv4' && !i.internal).map((i) => i.address);
+    console.log('Attacker console, open on a different device:');
+    for (const ip of lan.length ? lan : ['localhost']) console.log(`  http://${ip}:${PORT}/attacker`);
+  }
   twin.sim?.start();
 });

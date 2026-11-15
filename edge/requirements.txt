@@ -1,0 +1,5 @@
+# Same libraries hackJunction2026/demo_gui/inference.py imports.
+lightgbm
+numpy
+pandas>=2.0
+matplotlib
